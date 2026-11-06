@@ -1,0 +1,64 @@
+pitest {
+    pitestVersion = '1.30.1'
+    junit5PluginVersion = '1.2.3'
+    targetClasses = (findProperty('pitestTargetClasses') ?: 'kr.co.ratiko.weiter.*').split(',') as List
+    targetTests = (findProperty('pitestTargetTests') ?: 'kr.co.ratiko.weiter.*').split(',') as List
+    excludedClasses = ['kr.co.ratiko.weiter.WeiterApplication']
+    outputFormats = ['HTML', 'XML']
+    timestampedReports = false
+    threads = 4
+    mutationThreshold = 90
+}
+
+tasks.named('pitest') {
+    onlyIf {
+        def hasProductionCode = sourceSets.main.allJava.files.any {
+            it.name != 'WeiterApplication.java'
+        }
+        if (!hasProductionCode) {
+            logger.lifecycle('PIT 검사 대상 업무 클래스가 없어 건너뜁니다.')
+        }
+        hasProductionCode
+    }
+}
+
+// CI와 로컬에서 같은 방식으로 변경된 운영 코드만 변이 검사한다.
+if (providers.gradleProperty('pitestChanged').map { it.toBoolean() }.getOrElse(false)) {
+    def gitLines = { List<String> args ->
+        def process = new ProcessBuilder((['git', '-C', rootDir.absolutePath] + args)
+                .collect { it.toString() })
+                .redirectErrorStream(true)
+                .start()
+        def output = process.inputStream.getText('UTF-8')
+        if (process.waitFor() != 0) {
+            throw new GradleException("변경된 PIT 대상을 찾지 못했습니다: ${output.trim()}")
+        }
+        output.readLines()
+    }
+
+    def changedClasses = providers.provider {
+        def baseRef = providers.gradleProperty('pitestBaseRef').getOrElse('origin/main')
+        def sourcePath = 'src/main/java/'
+        def sourcePaths = (
+                gitLines(['diff', '--name-only', '--diff-filter=ACMR', "${baseRef}...HEAD", '--', 'src/main/java']) +
+                gitLines(['diff', '--name-only', '--diff-filter=ACMR', 'HEAD', '--', 'src/main/java']) +
+                gitLines(['ls-files', '--others', '--exclude-standard', '--', 'src/main/java'])
+        ).toSet()
+        sourcePaths.findAll {
+            it.startsWith(sourcePath) && it.endsWith('.java') &&
+                    !it.endsWith('/WeiterApplication.java')
+        }
+                .collect { it.substring(sourcePath.length(), it.length() - '.java'.length())
+                        .replace('/', '.') }
+                .sort()
+    }
+
+    pitest.targetClasses = changedClasses
+    tasks.named('pitest') {
+        onlyIf {
+            def classes = changedClasses.get()
+            logger.lifecycle("PIT 변경 대상: ${classes ? classes.join(', ') : '없음'}")
+            !classes.isEmpty()
+        }
+    }
+}
