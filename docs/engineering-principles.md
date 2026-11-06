@@ -10,6 +10,10 @@ These rules guide this server's Java work. When guidance conflicts, follow the u
 - Name concepts by domain meaning. Keep functions cohesive and at a consistent level of abstraction. Remove duplication when it represents the same rule; avoid extracting trivial wrappers just to shorten a method.
 - Make errors and nullability explicit at their boundary. Do not return a plausible default to hide a failure. Add comments for non-obvious reasons and contracts, not to narrate code.
 
+## Lombok
+
+Use only `@Slf4j` and `@RequiredArgsConstructor`. Annotations that generate accessors, mutators, builders, or all-argument constructors, such as `@Data`, `@Getter`, `@Setter`, `@Builder`, and `@AllArgsConstructor`, hide object behavior from the class that owns it. `lombok.config` turns their use into a compile error.
+
 ## Bibbidi layer structure
 
 The reference is `C:\woowahan-techcourse\3.LEVEL_3\bibbdi_source_code\BE` and its `docs/convention/code-convention.md`. Adapt its package shape to this project without copying its product behavior or dependencies:
