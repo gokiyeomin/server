@@ -35,12 +35,13 @@ jobs:
           PITEST_BASE_REF: ${{ github.event.pull_request.base.sha }}
         run: ./gradlew pitest -PpitestChanged=true -PpitestBaseRef="$PITEST_BASE_REF"
 
-      - name: Upload test and PIT reports on failure
+      - name: Upload test, JaCoCo and PIT reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
           path: |
             build/reports/tests/test
+            build/reports/jacoco/test
             build/reports/pitest
           if-no-files-found: ignore
