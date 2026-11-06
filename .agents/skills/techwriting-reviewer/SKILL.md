@@ -1,13 +1,13 @@
 ---
 name: techwriting-reviewer
-description: Review Korean technical writing and documentation for minimum publication quality using an 18-item checklist. Use after drafting or editing a technical document, and when the user asks for a writing review. Report findings; do not rewrite without a request.
+description: Review every prose draft intended for a project file before it is written, using the 18-item checklist. Report findings so the author can revise and submit a passing draft before saving.
 ---
 
 # Technical writing reviewer
 
-Use this skill as the reviewer for technical prose in this project. Review a draft after it is written or edited, even when the user did not separately ask for a review. For routine code changes or brief conversational answers, it is not a required step. Keep the authoring and reviewer roles separate: this skill reports findings and does not silently revise the text.
+Use this skill as the reviewer for every piece of prose that will be added to or changed in a project file, including documentation, templates, comments, prompts, and user-facing copy. Draft the proposed text in memory first and review it in the context of the target file. If the draft fails, the author revises the draft and requests another review. Write to the target file only after the draft passes, then check that the saved text matches the approved draft. This gate does not apply to program syntax, generated data, or brief conversational replies that are not saved to a file. Keep the authoring and reviewer roles separate: this skill reports findings and does not silently revise the text.
 
-Read `references/REFERENCE.md` and apply its 18 checks, P0/P1/P2 severity, and output format. If an item cannot be checked from the supplied format, mark it unverified rather than passing it. A P0 blocks publication readiness; P1 and P2 are advice for the author. Cite the exact passage or location behind each finding. Do not manufacture a defect to fill the checklist.
+Read `references/REFERENCE.md` and apply its 18 checks, P0/P1/P2 severity, and output format. Mark a criterion as not applicable when the format genuinely lacks that element, such as a code block in a short comment. If an applicable item cannot be checked, mark it unverified rather than passing it. For this project's pre-write gate, pass only when every applicable item passes and none is unverified. This is stricter than the upstream publication threshold: P1 and P2 findings also require revision before writing to the file. Cite the exact passage or location behind each finding. Do not manufacture a defect to fill the checklist.
 
 Accept Markdown, plain text, Word content, pasted text, or an accessible Google document. Use the connected document tool available in the current agent when a link is provided. If no tool can read the input, ask for the document text. Save a review file only when the user requests one.
 

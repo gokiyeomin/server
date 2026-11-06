@@ -44,6 +44,8 @@ Codex와 Google Antigravity는 `.agents/skills/`의 원본 스킬을 사용합�
 | `java-junit` | JUnit Jupiter 테스트 작성 방식 |
 | `weiter-test-strategy` | 클래스·계층 책임에 따른 테스트 선택과 Fake/컨텍스트 구분 |
 | `humanize-korean` | 요청받은 한국어 원고 윤문 |
-| `techwriting-reviewer` | 기술 문서 작성·수정 후 18개 항목 검토 |
+| `techwriting-reviewer` | 파일에 넣을 모든 글의 초안을 저장 전에 18개 항목으로 검토 |
+
+파일에 넣을 글은 먼저 초안을 만들고 `techwriting-reviewer`로 평가합니다. 적용 가능한 항목이 모두 통과하면 파일에 저장하고, 실패하면 초안을 고쳐 다시 평가합니다. 이 절차는 문서·템플릿·주석·프롬프트·사용자에게 보이는 문구에 적용합니다.
 
 스킬 원본을 수정하면 Claude 연결 스킬의 설명도 함께 확인합니다. `humanize-korean`의 검증 스크립트를 실행하려면 Python 3가 필요합니다. 스킬의 출처와 적용 라이선스는 각 `SKILL.md`와 `third_party/licenses/`에 기록되어 있습니다.
