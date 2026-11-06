@@ -1,6 +1,6 @@
 # Project guidance
 
-Read `docs/engineering-principles.md` for Java work. Elegant Objects and Clean Code are the highest project design requirements; use Bibbidi's feature-local layer structure. The task-specific skills are in `.agents/skills/`. For tests, follow `.agents/skills/weiter-test-strategy/SKILL.md`: verify each layer's responsibility and each changed class's responsibility, prefer handwritten Fakes, and load Spring only for Spring behavior.
+Read `docs/engineering-principles.md` for Java work. Elegant Objects and Clean Code are the highest project design requirements; use Bibbidi's feature-local layer structure. The task-specific skills are in `.agents/skills/`. For tests, follow `.agents/skills/weiter-test-strategy/SKILL.md`: verify each layer's responsibility and each changed class's responsibility, prefer handwritten Fakes, and never test Spring Framework or Spring Boot behavior itself.
 
 When a source listed in `.agents/skills/wiki-sync/SKILL.md` changes, run `wiki-sync` in the same task and report the wiki result.
 

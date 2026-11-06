@@ -32,4 +32,4 @@ The usual call path is Controller → Service → Repository → Persistence. Th
 
 ## Verification boundary
 
-Keep the existing Java 25, Spring Boot 4, JaCoCo 80% line gate, and PIT settings unless a task changes them. Test each changed class's observable responsibility and its layer's contract. Use direct construction and handwritten Fakes for ordinary object behavior; use the smallest Spring context that can verify a framework contract. Follow `.agents/skills/weiter-test-strategy/SKILL.md` for the decision rules.
+Keep the existing Java 25, Spring Boot 4, JaCoCo 80% line gate, and PIT settings unless a task changes them. Test each changed class's observable responsibility and its layer's contract. Use direct construction and handwritten Fakes for ordinary object behavior. Do not test Spring Framework or Spring Boot behavior itself; load a Spring context only when a test needs one to run a persistence mapping or query that this project wrote. Follow `.agents/skills/weiter-test-strategy/SKILL.md` for the decision rules.

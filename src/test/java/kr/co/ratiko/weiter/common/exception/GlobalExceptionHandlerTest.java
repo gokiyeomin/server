@@ -1,120 +1,107 @@
 package kr.co.ratiko.weiter.common.exception;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.not;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import org.junit.jupiter.api.BeforeEach;
+import java.lang.reflect.Method;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
+import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.context.request.WebRequest;
 
 class GlobalExceptionHandlerTest {
 
-    private MockMvc mockMvc;
+    private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+    private final WebRequest request = new ServletWebRequest(new MockHttpServletRequest("GET", "/rooms/7"));
 
-    @BeforeEach
-    void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new FailingController())
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .build();
+    @Test
+    void businessExceptionReturnsItsClientError() {
+        BusinessException exception = new BusinessException(ClientError.ROOM_NOT_FOUND, "room 7 does not exist");
+
+        ResponseEntity<ErrorResponse> response = handler.handleBusinessException(exception, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody()).isEqualTo(new ErrorResponse(302, "방을 찾을 수 없습니다."));
     }
 
     @Test
-    void businessExceptionReturnsItsClientError() throws Exception {
-        mockMvc.perform(get("/fail/business"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.errorCode").value(302))
-                .andExpect(jsonPath("$.message").value("방을 찾을 수 없습니다."));
-    }
+    void businessExceptionDoesNotExposeItsLogMessage() {
+        BusinessException exception = new BusinessException(ClientError.ROOM_NOT_FOUND, "room 7 does not exist");
 
-    @Test
-    void businessExceptionDoesNotExposeItsLogMessage() throws Exception {
-        mockMvc.perform(get("/fail/business"))
-                .andExpect(content().string(not(containsString("room 7"))));
-    }
+        ResponseEntity<ErrorResponse> response = handler.handleBusinessException(exception, request);
 
-    @Test
-    void invalidBodyListsFieldErrors() throws Exception {
-        mockMvc.perform(post("/fail/validate")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errorCode").value(101))
-                .andExpect(jsonPath("$.errors[0].field").value("name"));
-    }
-
-    @Test
-    void springClientErrorKeepsItsStatusWithInvalidRequestCode() throws Exception {
-        mockMvc.perform(post("/fail/business"))
-                .andExpect(status().isMethodNotAllowed())
-                .andExpect(jsonPath("$.errorCode").value(101));
-    }
-
-    @Test
-    void typeMismatchIsInvalidRequest() throws Exception {
-        mockMvc.perform(get("/fail/number/abc"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errorCode").value(101));
+        assertThat(response.getBody().message()).doesNotContain("room 7");
     }
 
     @Test
     void unexpectedFailureIsInternalErrorWithoutDetails() throws Exception {
-        mockMvc.perform(get("/fail/unknown"))
-                .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.errorCode").value(901))
-                .andExpect(content().string(not(containsString("boom"))));
+        ResponseEntity<ErrorResponse> response = handler.handleUnexpected(new IllegalStateException("boom"), request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isEqualTo(new ErrorResponse(901, "요청을 처리하는 중 오류가 발생했습니다."));
     }
 
     @Test
-    void accessDeniedPropagatesToSecurityFilterChain() {
-        assertThatThrownBy(() -> mockMvc.perform(get("/fail/denied")))
-                .hasRootCauseInstanceOf(AccessDeniedException.class);
+    void accessDeniedIsRethrownForTheSecurityFilterChain() {
+        AccessDeniedException exception = new AccessDeniedException("denied");
+
+        assertThatThrownBy(() -> handler.handleUnexpected(exception, request)).isSameAs(exception);
     }
 
-    @RestController
-    static class FailingController {
+    @Test
+    void authenticationFailureIsRethrownForTheSecurityFilterChain() {
+        BadCredentialsException exception = new BadCredentialsException("bad");
 
-        @GetMapping("/fail/business")
-        String business() {
-            throw new BusinessException(ClientError.ROOM_NOT_FOUND, "room 7 does not exist");
-        }
-
-        @PostMapping("/fail/validate")
-        String validate(@Valid @RequestBody Payload payload) {
-            return payload.name();
-        }
-
-        @GetMapping("/fail/number/{value}")
-        String number(@PathVariable int value) {
-            return String.valueOf(value);
-        }
-
-        @GetMapping("/fail/unknown")
-        String unknown() {
-            throw new IllegalStateException("boom");
-        }
-
-        @GetMapping("/fail/denied")
-        String denied() {
-            throw new AccessDeniedException("denied");
-        }
+        assertThatThrownBy(() -> handler.handleUnexpected(exception, request)).isSameAs(exception);
     }
 
-    record Payload(@NotBlank String name) {
+    @Test
+    void clientErrorStatusFromTheFrameworkBecomesInvalidRequest() {
+        ResponseEntity<Object> response = handler.handleExceptionInternal(
+                new IllegalArgumentException("bad"), null, new HttpHeaders(), HttpStatus.METHOD_NOT_ALLOWED, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+        assertThat(response.getBody()).isEqualTo(new ErrorResponse(101, "요청 값이 올바르지 않습니다."));
+    }
+
+    @Test
+    void serverErrorStatusFromTheFrameworkBecomesInternalError() {
+        ResponseEntity<Object> response = handler.handleExceptionInternal(
+                new IllegalStateException("boom"), null, new HttpHeaders(), HttpStatus.SERVICE_UNAVAILABLE, request);
+
+        assertThat(response.getBody()).isEqualTo(new ErrorResponse(901, "요청을 처리하는 중 오류가 발생했습니다."));
+    }
+
+    @Test
+    void validationFailureListsEveryFieldError() throws Exception {
+        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "payload");
+        bindingResult.addError(new FieldError("payload", "name", "must not be blank"));
+        bindingResult.addError(new FieldError("payload", "size", null, false, null, null, null));
+
+        ResponseEntity<Object> response = handler.handleExceptionInternal(
+                new MethodArgumentNotValidException(parameter(), bindingResult),
+                null, new HttpHeaders(), HttpStatus.BAD_REQUEST, request);
+
+        assertThat(response.getBody()).isEqualTo(ValidationErrorResponse.from(ClientError.INVALID_REQUEST, java.util.List.of(
+                new ValidationErrorResponse.FieldError("name", "must not be blank"),
+                new ValidationErrorResponse.FieldError("size", "올바르지 않은 값입니다."))));
+    }
+
+    private MethodParameter parameter() throws NoSuchMethodException {
+        Method method = GlobalExceptionHandlerTest.class.getDeclaredMethod("endpoint", Object.class);
+        return new MethodParameter(method, 0);
+    }
+
+    @SuppressWarnings("unused")
+    private void endpoint(Object payload) {
     }
 }
