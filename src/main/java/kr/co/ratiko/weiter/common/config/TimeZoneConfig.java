@@ -9,6 +9,8 @@ public class TimeZoneConfig {
     private static final String KOREA_TIMEZONE_ID = "Asia/Seoul";
 
     static {
-        TimeZone.setDefault(TimeZone.getTimeZone(KOREA_TIMEZONE_ID));
+        TimeZone.setDefault(
+                TimeZone.getTimeZone(KOREA_TIMEZONE_ID)
+        );
     }
 }
