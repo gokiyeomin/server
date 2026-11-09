@@ -1,5 +1,6 @@
 package kr.co.ratiko.weiter.room.controller;
 
+import java.time.LocalDate;
 import java.util.List;
 import kr.co.ratiko.weiter.room.domain.Room;
 import kr.co.ratiko.weiter.room.domain.RoomDetails;
@@ -8,6 +9,9 @@ public record DetailRoomResponse(
         Long id,
         String title,
         GateResponse gate,
+        TradeStatusResponse tradeStatus,
+        LocalDate moveInDate,
+        LocalDate expiryDate,
         int depositWon,
         int monthlyRentWon,
         int maintenanceFeeWon,
@@ -36,6 +40,9 @@ public record DetailRoomResponse(
                 room.id(),
                 room.title().text(),
                 view.gate(),
+                TradeStatusResponse.from(room.tradeStatus()),
+                room.leasePeriod().moveInDate(),
+                room.leasePeriod().expiryDate(),
                 room.price().depositWon(),
                 room.price().monthlyRentWon(),
                 room.price().maintenanceFeeWon(),

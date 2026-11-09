@@ -76,6 +76,9 @@ class RoomControllerTest {
 
         assertThat(response.id()).isEqualTo(7L);
         assertThat(response.gate()).isEqualTo(new GateResponse("NORTH_GATE", "북문"));
+        assertThat(response.tradeStatus()).isEqualTo(new TradeStatusResponse("TRADING", "거래중"));
+        assertThat(response.moveInDate()).isEqualTo(LocalDate.of(2027, 3, 1));
+        assertThat(response.expiryDate()).isEqualTo(LocalDate.of(2027, 8, 31));
         assertThat(response.transferBenefit()).isTrue();
         assertThat(response.transferBenefitDetail()).isEqualTo("월세 1개월 지원");
         assertThat(response.description()).isEqualTo("북문 도보 3분");
