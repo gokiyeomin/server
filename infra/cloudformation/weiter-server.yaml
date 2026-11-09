@@ -13,9 +13,12 @@ Parameters:
   PublicSubnetCidr:
     Type: String
     Default: 10.60.1.0/24
-  RepositorySlug:
+  GitHubSubjectPrefix:
     Type: String
-    Default: gokiyeomin/server
+    Default: repo:gokiyeomin@181650574/server@1436929397
+    Description: >-
+      Prefix of the OIDC subject claim that GitHub issues for the repository.
+      This repository uses immutable subject IDs, so the prefix carries the owner ID and the repository ID.
   MainBranchRef:
     Type: String
     Default: refs/heads/main
@@ -307,8 +310,8 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
                 token.actions.githubusercontent.com:sub:
-                  - !Sub repo:${RepositorySlug}:ref:${MainBranchRef}
-                  - !Sub repo:${RepositorySlug}:environment:${GitHubEnvironment}
+                  - !Sub ${GitHubSubjectPrefix}:ref:${MainBranchRef}
+                  - !Sub ${GitHubSubjectPrefix}:environment:${GitHubEnvironment}
       Policies:
         - PolicyName: weiter-github-actions-deploy
           PolicyDocument:
