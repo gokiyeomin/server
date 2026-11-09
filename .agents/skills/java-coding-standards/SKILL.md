@@ -14,4 +14,20 @@ Read `../../../docs/engineering-principles.md` first. Elegant Objects and Clean 
 - Follow `kr.co.ratiko.weiter.<feature>/{controller,service,repository,persistence,domain}` rather than a single application-wide controller/service/repository tree.
 - Preserve local formatting and dependency choices. Do not add libraries or framework patterns merely to satisfy an example.
 
+## Object calisthenics for domain objects
+
+Apply these nine rules when writing or reviewing domain code:
+
+1. Use only one level of indentation in each method.
+2. Do not use `else`.
+3. Wrap primitive values and strings in domain value objects.
+4. Use at most one method-call dot per line.
+5. Use complete names instead of abbreviations.
+6. Keep entities small and focused on one responsibility.
+7. Keep fewer than three instance fields in each class.
+8. Give collections their own class and put collection behavior there.
+9. Do not expose getters, setters, or passive property holders. Ask objects to perform domain operations instead of extracting their state.
+
+Keep domain classes as separate top-level types rather than nested classes. When a task only defines state, use constructor-supplied immutable fields and wait for a concrete business operation before adding behavior. Do not add accessors or invented behavior to make a state-only draft appear complete.
+
 Adapted from [affaan-m/ECC](https://github.com/affaan-m/ECC/tree/b38be6a7f6350964d59328b52f0624e1d1d552d1/skills/java-coding-standards). License: `../../../third_party/licenses/affaan-m-ecc.txt`.
