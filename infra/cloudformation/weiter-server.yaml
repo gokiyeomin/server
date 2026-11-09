@@ -1,0 +1,369 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Weiter production infra: one t4g.small EC2 instance running the app container, an Elastic IP, an ECR repository, and a GitHub Actions OIDC deploy role."
+
+Parameters:
+  AppInstanceType:
+    Type: String
+    Default: t4g.small
+    AllowedValues:
+      - t4g.small
+  VpcCidr:
+    Type: String
+    Default: 10.60.0.0/16
+  PublicSubnetCidr:
+    Type: String
+    Default: 10.60.1.0/24
+  RepositorySlug:
+    Type: String
+    Default: gokiyeomin/server
+  MainBranchRef:
+    Type: String
+    Default: refs/heads/main
+  EcrRepositoryName:
+    Type: String
+    Default: weiter/server
+  GitHubEnvironment:
+    Type: String
+    Default: production
+  AppAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: >-
+      Amazon Linux 2023 arm64 AMI ID for the app instance. Reuse the current ID on updates;
+      a different ID replaces the instance.
+  CreateOidcProvider:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: >-
+      Set to true only when the account has no token.actions.githubusercontent.com provider yet.
+      An account can hold only one provider per URL.
+  EnvParameterName:
+    Type: String
+    Default: /weiter/prod/env
+    Description: >-
+      SSM Parameter Store SecureString that holds the app .env content.
+      The CD workflow writes it from GitHub environment secrets.
+  NginxEnvParameterName:
+    Type: String
+    Default: /weiter/prod/nginx-env
+    Description: >-
+      SSM Parameter Store SecureString that holds the nginx values: SERVER_NAME, CERT_DOMAIN, CERT_EMAIL
+      and the allowed CORS origins. Create it before the first deploy.
+  WebIngressCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR allowed to reach ports 80 and 443.
+
+Conditions:
+  ShouldCreateOidcProvider: !Equals [ !Ref CreateOidcProvider, "true" ]
+
+Resources:
+  AppVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: weiter-prod-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: weiter-prod-igw
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref AppVpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: !Ref PublicSubnetCidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: weiter-prod-public-subnet
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref AppVpc
+      Tags:
+        - Key: Name
+          Value: weiter-prod-public-rt
+
+  DefaultInternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Weiter production app security group
+      VpcId: !Ref AppVpc
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: weiter-prod-app-sg
+
+  HttpIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AppSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: !Ref WebIngressCidr
+
+  HttpsIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AppSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      CidrIp: !Ref WebIngressCidr
+
+  AppInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: weiter-app-instance
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !GetAtt AppEcrRepository.Arn
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${EnvParameterName}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${NginxEnvParameterName}
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref AppInstanceRole
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref AppInstanceType
+      ImageId: !Ref AppAmiId
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref AppSecurityGroup
+      IamInstanceProfile: !Ref AppInstanceProfile
+      MetadataOptions:
+        HttpTokens: required
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: weiter-server
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash -xe
+          dnf install -y docker certbot gettext
+          systemctl enable --now docker
+          mkdir -p /usr/local/lib/docker/cli-plugins
+          curl -fsSL https://github.com/docker/compose/releases/download/v5.7.0/docker-compose-linux-aarch64 \
+            -o /usr/local/lib/docker/cli-plugins/docker-compose
+          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          docker compose version
+          fallocate -l 2G /swapfile
+          chmod 600 /swapfile
+          mkswap /swapfile
+          swapon /swapfile
+          echo '/swapfile none swap sw 0 0' >> /etc/fstab
+          mkdir -p /opt/weiter
+
+  AppElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  AppElasticIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt AppElasticIp.AllocationId
+      InstanceId: !Ref AppInstance
+
+  AppEcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref EcrRepositoryName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep one build cache image",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["buildcache"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 1
+                },
+                "action": { "type": "expire" }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Keep latest 30 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 30
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+      Tags:
+        - Key: Name
+          Value: weiter-github-actions-oidc
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: weiter-github-actions-deploy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: !If
+                - ShouldCreateOidcProvider
+                - !Ref GitHubOidcProvider
+                - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${RepositorySlug}:ref:${MainBranchRef}
+                  - !Sub repo:${RepositorySlug}:environment:${GitHubEnvironment}
+      Policies:
+        - PolicyName: weiter-github-actions-deploy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !GetAtt AppEcrRepository.Arn
+              - Effect: Allow
+                Action: ec2:DescribeInstances
+                Resource: '*'
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                Condition:
+                  StringEquals:
+                    ssm:resourceTag/Name: weiter-server
+              - Effect: Allow
+                Action: ssm:GetCommandInvocation
+                Resource: '*'
+              - Effect: Allow
+                Action: ssm:PutParameter
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${EnvParameterName}
+              - Effect: Allow
+                Action:
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+
+Outputs:
+  ElasticIp:
+    Description: Public Elastic IP of the app instance
+    Value: !Ref AppElasticIp
+  Ec2InstanceId:
+    Description: App EC2 instance ID. The deploy job finds the instance through the tag Name=weiter-server.
+    Value: !Ref AppInstance
+  EcrRepositoryUri:
+    Description: ECR repository URI for the app image
+    Value: !GetAtt AppEcrRepository.RepositoryUri
+  GitHubActionsRoleArn:
+    Description: GitHub Actions deploy role ARN
+    Value: !GetAtt GitHubActionsDeployRole.Arn

@@ -1,0 +1,51 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: weiter-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: weiter
+      MYSQL_USER: weiter
+      MYSQL_PASSWORD: weiter
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - weiter-mysql-data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -proot --silent"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: weiter-server-local
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/weiter?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: weiter
+      SPRING_DATASOURCE_PASSWORD: weiter
+
+  nginx:
+    image: public.ecr.aws/docker/library/nginx:1.31.0-alpine
+    container_name: weiter-nginx-local
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./infra/nginx/nginx.local.conf:/etc/nginx/nginx.conf:ro
+
+volumes:
+  weiter-mysql-data:

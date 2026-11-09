@@ -1,0 +1,52 @@
+services:
+  backend:
+    image: "${IMAGE:?IMAGE is required}"
+    container_name: weiter-server
+    restart: unless-stopped
+    env_file:
+      - path: ./.env
+        format: raw
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    ports:
+      - "127.0.0.1:8080:8080"
+    stop_grace_period: 30s
+    mem_limit: 1200m
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  nginx:
+    image: public.ecr.aws/docker/library/nginx:1.31.0-alpine
+    container_name: weiter-nginx
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certbot:/var/www/certbot:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

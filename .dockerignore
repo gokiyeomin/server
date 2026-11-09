@@ -1,0 +1,17 @@
+**
+!Dockerfile
+!Dockerfile.local
+!build/
+!build/libs/
+!build/libs/app.jar
+
+!gradlew
+!gradlew.bat
+!gradle/
+!gradle/**
+!build.gradle
+!settings.gradle
+!gradle.properties
+!lombok.config
+!src/
+!src/**

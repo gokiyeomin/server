@@ -1,0 +1,129 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - build.gradle
+      - settings.gradle
+      - gradle.properties
+      - gradle/**
+      - lombok.config
+      - Dockerfile
+      - Dockerfile.dockerignore
+      - compose.prod.yml
+      - infra/scripts/**
+      - infra/nginx/**
+      - .github/scripts/**
+      - .github/workflows/cd.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: weiter-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: weiter/server
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    outputs:
+      registry: ${{ steps.ecr.outputs.registry }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Find the tested JAR from the pull request CI
+        id: ci-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/find-ci-artifact.sh
+
+      - name: Download the tested JAR
+        if: steps.ci-artifact.outputs.artifact-id != ''
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.ci-artifact.outputs.artifact-id }}
+          run-id: ${{ steps.ci-artifact.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: build/libs
+          merge-multiple: true
+
+      - name: Set up Java 25
+        if: steps.ci-artifact.outputs.artifact-id == ''
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        if: steps.ci-artifact.outputs.artifact-id == ''
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build the JAR when no tested JAR exists
+        if: steps.ci-artifact.outputs.artifact-id == ''
+        run: ./gradlew check bootJar
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push the arm64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+
+  deploy:
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Store the app environment in SSM
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: bash .github/scripts/store-app-env.sh
+
+      - name: Deploy through SSM Run Command
+        env:
+          REGISTRY: ${{ needs.image.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: bash .github/scripts/deploy-via-ssm.sh

@@ -8,25 +8,30 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Java 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
-      - name: Test and build
+      - name: Test and build the JAR
         run: ./gradlew check bootJar
 
       - name: Check mutations in changed Java classes
@@ -35,9 +40,23 @@ jobs:
           PITEST_BASE_REF: ${{ github.event.pull_request.base.sha }}
         run: ./gradlew pitest -PpitestChanged=true -PpitestBaseRef="$PITEST_BASE_REF"
 
+      - name: Compute the source fingerprint
+        if: github.event_name == 'pull_request'
+        id: fingerprint
+        run: echo "name=$(bash .github/scripts/source-fingerprint.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the tested JAR
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.fingerprint.outputs.name }}
+          path: build/libs/app.jar
+          retention-days: 14
+          if-no-files-found: error
+
       - name: Upload test, JaCoCo and PIT reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-reports
           path: |

@@ -1,0 +1,17 @@
+FROM public.ecr.aws/docker/library/eclipse-temurin:25-jdk AS build
+
+WORKDIR /workspace
+COPY . .
+RUN chmod +x gradlew
+RUN --mount=type=cache,target=/root/.gradle ./gradlew bootJar --no-daemon
+
+FROM public.ecr.aws/docker/library/eclipse-temurin:25-jre-noble
+
+WORKDIR /app
+COPY --from=build /workspace/build/libs/app.jar /app/app.jar
+
+EXPOSE 8080
+
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=60.0"
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
