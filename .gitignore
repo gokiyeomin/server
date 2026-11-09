@@ -36,5 +36,8 @@ out/
 ### VS Code ###
 .vscode/
 
+### Local environment variables ###
+.env
+
 ### Skill working files ###
 _workspace/
