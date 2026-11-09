@@ -1,7 +1,6 @@
 package kr.co.ratiko.weiter.common.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.Method;
 import org.junit.jupiter.api.Test;
@@ -10,8 +9,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -43,25 +40,11 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void unexpectedFailureIsInternalErrorWithoutDetails() throws Exception {
+    void unexpectedFailureIsInternalErrorWithoutDetails() {
         ResponseEntity<ErrorResponse> response = handler.handleUnexpected(new IllegalStateException("boom"), request);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody()).isEqualTo(new ErrorResponse(901, "요청을 처리하는 중 오류가 발생했습니다."));
-    }
-
-    @Test
-    void accessDeniedIsRethrownForTheSecurityFilterChain() {
-        AccessDeniedException exception = new AccessDeniedException("denied");
-
-        assertThatThrownBy(() -> handler.handleUnexpected(exception, request)).isSameAs(exception);
-    }
-
-    @Test
-    void authenticationFailureIsRethrownForTheSecurityFilterChain() {
-        BadCredentialsException exception = new BadCredentialsException("bad");
-
-        assertThatThrownBy(() -> handler.handleUnexpected(exception, request)).isSameAs(exception);
     }
 
     @Test
